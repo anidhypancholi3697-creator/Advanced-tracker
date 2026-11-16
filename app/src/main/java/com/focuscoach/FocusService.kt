@@ -124,18 +124,27 @@ class FocusService : LifecycleService() {
 
     // Heuristic: face dikhe + aankhen khuli + sidha = Screen; neeche jhuka = Notes;
     // side mudi ya aankhen band = Time-pass; face nahi = Away.
+    private var cand = Store.AWAY
+    private var streak = 0
+
+    // Neeche dekhna = Notes (pehle check, kyunki neeche dekhte waqt aankhen band jaisi dikhti hain).
+    // 3 baar lagatar same aaye tabhi badalta hai, taaki flicker na ho.
     private fun classify(faces: List<Face>) {
         lastResult = System.currentTimeMillis()
         val f = faces.maxByOrNull { it.boundingBox.width() }
-        cat = if (f == null) Store.AWAY else {
+        val raw = if (f == null) Store.AWAY else {
             val eyes = ((f.leftEyeOpenProbability ?: 1f) + (f.rightEyeOpenProbability ?: 1f)) / 2
+            val pitch = f.headEulerAngleX
+            val yaw = abs(f.headEulerAngleY)
             when {
-                eyes < 0.3f -> Store.DISTRACTED
-                f.headEulerAngleX < -18f -> Store.NOTES
-                abs(f.headEulerAngleY) > 30f -> Store.DISTRACTED
+                pitch < -10f && yaw < 35f -> Store.NOTES
+                yaw > 30f -> Store.DISTRACTED
+                eyes < 0.25f -> Store.DISTRACTED
                 else -> Store.SCREEN
             }
         }
+        if (raw == cand) streak++ else { cand = raw; streak = 1 }
+        if (streak >= 3) cat = cand
     }
 
     private fun onTick() {
@@ -191,8 +200,8 @@ class FocusService : LifecycleService() {
             .setContentIntent(pi)
             .setOngoing(true)
             .build()
-        n.flags = n.flags or Notification.FLAG_INSISTENT
         getSystemService(NotificationManager::class.java).notify(CALL_ID, n)
+        Ringer.start(this)
     }
 
     private fun createChannels() {
@@ -201,11 +210,8 @@ class FocusService : LifecycleService() {
             NotificationChannel(SVC_CH, "Focus tracking", NotificationManager.IMPORTANCE_LOW)
         )
         val call = NotificationChannel(CALL_CH, "Coach call", NotificationManager.IMPORTANCE_HIGH).apply {
-            setSound(
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
-                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build()
-            )
-            enableVibration(true)
+            setSound(null, null)
+            enableVibration(false)
         }
         nm.createNotificationChannel(call)
     }
@@ -227,5 +233,37 @@ class FocusService : LifecycleService() {
         h.removeCallbacks(tick)
         exec.shutdown()
         super.onDestroy()
+    }
+}
+
+// Asli ringtone: alarm stream par bajta hai, isliye silent mode me bhi sunai deta hai.
+object Ringer {
+    private var r: android.media.Ringtone? = null
+    private var vib: android.os.Vibrator? = null
+    private val h = Handler(Looper.getMainLooper())
+
+    fun start(c: android.content.Context) {
+        stop()
+        try {
+            val ctx = c.applicationContext
+            val rt = RingtoneManager.getRingtone(ctx, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
+            rt.audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+            rt.isLooping = true
+            rt.play()
+            r = rt
+            vib = ctx.getSystemService(android.os.Vibrator::class.java)
+            vib?.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0, 800, 800), 0))
+            h.postDelayed({ stop() }, 45000)
+        } catch (_: Exception) {
+        }
+    }
+
+    fun stop() {
+        h.removeCallbacksAndMessages(null)
+        try { r?.stop() } catch (_: Exception) {}
+        try { vib?.cancel() } catch (_: Exception) {}
+        r = null
     }
 }

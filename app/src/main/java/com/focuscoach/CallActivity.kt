@@ -74,6 +74,17 @@ class CallActivity : Activity(), TextToSpeech.OnInitListener {
         if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
             t.language = Locale.getDefault()
         }
+        t.setSpeechRate(0.92f)
+        t.setPitch(1.0f)
+        t.setAudioAttributes(
+            android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()
+        )
+        try {
+            t.voices?.filter { it.locale.language == "hi" }?.maxByOrNull { it.quality }?.let { t.voice = it }
+        } catch (_: Exception) {
+        }
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(id: String?) {}
             override fun onError(id: String?) { runOnUiThread { done(id) } }
@@ -94,6 +105,7 @@ class CallActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun cancelRing() {
+        Ringer.stop()
         getSystemService(NotificationManager::class.java).cancel(FocusService.CALL_ID)
     }
 
@@ -168,6 +180,7 @@ class CallActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
+        Ringer.stop()
         sr?.destroy()
         tts?.shutdown()
         super.onDestroy()
