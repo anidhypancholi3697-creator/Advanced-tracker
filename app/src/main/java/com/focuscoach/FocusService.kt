@@ -30,6 +30,7 @@ class FocusService : LifecycleService() {
     companion object {
         const val ACTION_STOP = "stop"
         const val ACTION_BREAK = "break"
+        const val ACTION_DECLINE = "decline"
         const val SVC_CH = "svc"
         const val CALL_CH = "call"
         const val CALL_ID = 1001
@@ -66,6 +67,10 @@ class FocusService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
             ACTION_STOP -> finishSession()
+            ACTION_DECLINE -> {
+                Ringer.stop()
+                getSystemService(NotificationManager::class.java).cancel(CALL_ID)
+            }
             ACTION_BREAK -> {
                 val m = intent.getIntExtra("min", 5)
                 Store.setBreakUntil(this, System.currentTimeMillis() + m * 60000L)
@@ -199,6 +204,21 @@ class FocusService : LifecycleService() {
             .setFullScreenIntent(pi, true)
             .setContentIntent(pi)
             .setOngoing(true)
+            .setStyle(
+                NotificationCompat.CallStyle.forIncomingCall(
+                    androidx.core.app.Person.Builder().setName("Focus Coach").setImportant(true).build(),
+                    PendingIntent.getService(
+                        this, 4, Intent(this, FocusService::class.java).setAction(ACTION_DECLINE),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    ),
+                    PendingIntent.getActivity(
+                        this, 3,
+                        Intent(this, CallActivity::class.java).putExtra("msg", msg).putExtra("answer", true)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                )
+            )
             .build()
         getSystemService(NotificationManager::class.java).notify(CALL_ID, n)
         Ringer.start(this)

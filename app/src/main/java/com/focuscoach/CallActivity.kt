@@ -132,7 +132,14 @@ class CallActivity : Activity(), TextToSpeech.OnInitListener {
         }
         setContentView(root)
         tts = TextToSpeech(this, this)
-        if (ringing) showRinging() else showCall()
+        if (intent.getBooleanExtra("answer", false)) answer()
+        else if (ringing) showRinging() else showCall()
+    }
+
+    override fun onNewIntent(i: Intent) {
+        super.onNewIntent(i)
+        setIntent(i)
+        if (i.getBooleanExtra("answer", false)) answer()
     }
 
     private fun showRinging() {
